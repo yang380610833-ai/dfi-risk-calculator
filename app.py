@@ -22,7 +22,15 @@ COEFFICIENTS  = np.array(mp["coefficients"])
 TRAIN_MEAN    = np.array(it["train_mean"])
 TRAIN_STD     = np.array(it["train_std"])
 THRESHOLDS    = mp["thresholds"]         # [0.034, 0.103, 0.298]
-THRESH_LABELS = mp["threshold_labels"]   # ["低风险","中风险","高风险","极高风险"]
+THRESH_LABELS = mp["threshold_labels"]   # ["low","medium","high","very high"]
+
+# 前端显示用中文映射
+RISK_CN = {
+    "low": "低风险",
+    "medium": "中风险",
+    "high": "高风险",
+    "very high": "极高风险"
+}
 
 # 变量中文名（前端展示用）
 FEATURE_LABELS = {
@@ -78,7 +86,7 @@ def predict():
 
     return jsonify({
         "probability": round(float(prob), 4),
-        "risk_level":  risk,
+        "risk_level":  RISK_CN.get(risk, risk),
         "lp":          round(float(lp), 4),
     })
 
