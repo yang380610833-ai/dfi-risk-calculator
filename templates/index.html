@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DFI 院内死亡风险预测</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f0f4f8; color: #2d3748; }
+  .container { max-width: 640px; margin: 30px auto; padding: 0 16px; }
+  h1 { text-align: center; font-size: 1.5rem; margin-bottom: 6px; color: #1a365d; }
+  .subtitle { text-align: center; font-size: 0.85rem; color: #718096; margin-bottom: 4px; }
+  .author { text-align: center; font-size: 0.8rem; color: #a0aec0; margin-bottom: 20px; }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 24px 28px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06); margin-bottom: 16px;
+  }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 4px; }
+  .form-group label .unit { font-weight: 400; color: #a0aec0; margin-left: 4px; }
+  .form-group input, .form-group select {
+    width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0;
+    border-radius: 8px; font-size: 0.95rem; transition: border .2s;
+  }
+  .form-group input:focus, .form-group select:focus {
+    outline: none; border-color: #4299e1; box-shadow: 0 0 0 3px rgba(66,153,225,.15);
+  }
+
+  .btn {
+    width: 100%; padding: 12px; background: #2b6cb0; color: #fff;
+    border: none; border-radius: 8px; font-size: 1rem; font-weight: 600;
+    cursor: pointer; transition: background .2s; margin-top: 8px;
+  }
+  .btn:hover { background: #2c5282; }
+
+  .result { display: none; text-align: center; padding: 20px; }
+  .result .prob {
+    font-size: 2.8rem; font-weight: 700; color: #2b6cb0;
+  }
+  .result .risk {
+    display: inline-block; margin-top: 10px; padding: 6px 20px;
+    border-radius: 20px; font-size: 1rem; font-weight: 600;
+    color: #fff;
+  }
+  .risk-low    { background: #38a169; }
+  .risk-medium { background: #d69e2e; }
+  .risk-high   { background: #dd6b20; }
+  .risk-extreme{ background: #e53e3e; }
+
+  .threshold-bar {
+    display: flex; align-items: center; margin-top: 20px;
+    height: 32px; border-radius: 16px; overflow: hidden;
+    position: relative; background: #edf2f7;
+  }
+  .t-seg { height: 100%; display: flex; align-items: center; justify-content: center;
+           font-size: 0.7rem; font-weight: 600; color: #fff; }
+  .t-seg-1 { background: #38a169; width: 3.4%; }
+  .t-seg-2 { background: #d69e2e; width: 6.9%; }
+  .t-seg-3 { background: #dd6b20; width: 19.5%; }
+  .t-seg-4 { background: #e53e3e; width: 70.2%; }
+  .t-marker {
+    position: absolute; top: -6px; width: 3px; height: 44px;
+    background: #1a202c; border-radius: 2px;
+  }
+
+  .legend { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.72rem; color: #718096; }
+
+  @media (max-width: 480px) {
+    .container { margin: 12px auto; }
+    .card { padding: 18px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>DFI 院内死亡风险预测</h1>
+  <p class="subtitle">基于 LASSO-Logistic Regression 预测模型（AUC=0.770）</p>
+  <p class="author">作者：民航总医院血管外科 杨耀辰</p>
+
+  <div class="card">
+    <form id="calc-form">
+      {% for feat in features %}
+      <div class="form-group">
+        <label>
+          {{ labels[feat] }}
+          {% if feat == 'mv_24h' or feat == 'debridement' %}
+            <span class="unit">（0=否, 1=是）</span>
+          {% endif %}
+        </label>
+        {% if feat == 'mv_24h' %}
+        <select name="{{ feat }}" id="{{ feat }}">
+          <option value="0">否</option>
+          <option value="1">是</option>
+        </select>
+        {% elif feat == 'debridement' %}
+        <select name="{{ feat }}" id="{{ feat }}">
+          <option value="0">否</option>
+          <option value="1">是</option>
+        </select>
+        {% else %}
+        <input type="number" name="{{ feat }}" id="{{ feat }}"
+               step="any" placeholder="请输入" required>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <button type="submit" class="btn">计算风险</button>
+    </form>
+
+    <div class="result" id="result-area">
+      <div>预测死亡概率</div>
+      <div class="prob" id="prob-text">—</div>
+      <div class="risk" id="risk-text">—</div>
+
+      <div class="threshold-bar" style="margin-top:24px">
+        <div class="t-seg t-seg-1">低</div>
+        <div class="t-seg t-seg-2">中</div>
+        <div class="t-seg t-seg-3">高</div>
+        <div class="t-seg t-seg-4">极高</div>
+        <div class="t-marker" id="t-marker" style="left:0%"></div>
+      </div>
+      <div class="legend">
+        <span>{{ "%.1f%%"|format(thresholds[0]*100) }}</span>
+        <span>{{ "%.1f%%"|format(thresholds[1]*100) }}</span>
+        <span>{{ "%.1f%%"|format(thresholds[2]*100) }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('calc-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  const payload = {};
+  {% for feat in features %}
+  payload['{{ feat }}'] = formData.get('{{ feat }}');
+  {% endfor %}
+
+  const resp = await fetch('/predict', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const result = await resp.json();
+
+  document.getElementById('result-area').style.display = 'block';
+  document.getElementById('prob-text').textContent = (result.probability * 100).toFixed(1) + '%';
+  const riskEl = document.getElementById('risk-text');
+  riskEl.textContent = result.risk_level;
+  riskEl.className = 'risk';
+  if      (result.risk_level === '低风险')   riskEl.classList.add('risk-low');
+  else if (result.risk_level === '中风险')   riskEl.classList.add('risk-medium');
+  else if (result.risk_level === '高风险')   riskEl.classList.add('risk-high');
+  else if (result.risk_level === '极高风险') riskEl.classList.add('risk-extreme');
+
+  // 在阈值条上标记位置
+  const pct = Math.min(Math.max(result.probability, 0), 1);
+  document.getElementById('t-marker').style.left = (pct * 100).toFixed(1) + '%';
+});
+</script>
+</body>
+</html>
